@@ -20,20 +20,18 @@ echo "Installing Node.js..."
 curl -fsSL https://rpm.nodesource.com/setup_16.x | bash -
 dnf install -y nodejs
 
-# Install MongoDB
-echo "Installing MongoDB..."
-cat > /etc/yum.repos.d/mongodb-org-4.4.repo << EOL
-[mongodb-org-4.4]
-name=MongoDB Repository
-baseurl=https://repo.mongodb.org/yum/redhat/8/mongodb-org/4.4/x86_64/
-gpgcheck=1
-enabled=1
-gpgkey=https://www.mongodb.org/static/pgp/server-4.4.asc
-EOL
+# Install PostgreSQL
+echo "Installing PostgreSQL..."
+dnf install -y postgresql-server postgresql-contrib
+postgresql-setup --initdb
+systemctl enable postgresql
+systemctl start postgresql
 
-dnf install -y mongodb-org
-systemctl start mongod
-systemctl enable mongod
+# Configure PostgreSQL
+echo "Configuring PostgreSQL..."
+sudo -u postgres psql -c "CREATE DATABASE patch_management;"
+sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';"
+sudo -u postgres psql -d patch_management -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
 
 # Create application directory
 echo "Setting up application directory..."
@@ -59,6 +57,7 @@ openssl req -x509 -newkey rsa:4096 -keyout ssl/private.key -out ssl/certificate.
 # Configure firewall
 echo "Configuring firewall..."
 firewall-cmd --permanent --add-port=443/tcp
+firewall-cmd --permanent --add-port=5432/tcp
 firewall-cmd --reload
 
 # Create systemd service
@@ -66,7 +65,7 @@ echo "Creating systemd service..."
 cat > /etc/systemd/system/patch-management.service << EOL
 [Unit]
 Description=Patch Management Application
-After=network.target mongod.service
+After=network.target postgresql.service
 
 [Service]
 Type=simple
@@ -75,6 +74,11 @@ WorkingDirectory=$APP_DIR
 ExecStart=/usr/bin/node server.js
 Restart=always
 Environment=NODE_ENV=production
+Environment=PGUSER=postgres
+Environment=PGHOST=localhost
+Environment=PGDATABASE=patch_management
+Environment=PGPASSWORD=postgres
+Environment=PGPORT=5432
 
 [Install]
 WantedBy=multi-user.target
@@ -88,4 +92,5 @@ systemctl start patch-management
 
 echo "Installation completed!"
 echo "The application is now running at https://localhost:443"
-echo "You can check the status with: systemctl status patch-management" 
+echo "You can check the status with: systemctl status patch-management"
+echo "PostgreSQL is running on port 5432" 
